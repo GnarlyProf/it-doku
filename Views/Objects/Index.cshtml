@@ -1,0 +1,827 @@
+@model (List<ITDoku.Models.DokuObject> roots, ITDoku.Models.DokuObject? current)
+@using ITDoku.Models
+@{
+    ViewData["Title"] = "Übersicht";
+    var web = ViewBag.WebInfo as WebInfoVm;                        // optional vom Controller gefüllt
+    bool isWeb = Model.current?.NodeType == NodeType.Webseiten;    // Webseiten (8)?
+                                                                   // Map aus dem Controller
+    var linkMap = ViewBag.LinkMap as Dictionary<(Guid ParentId, Guid TargetId), Guid>
+                  ?? new Dictionary<(Guid, Guid), Guid>();
+
+    var currentObj = Model.current;
+    var parentId = currentObj?.Id ?? Guid.Empty;
+
+    // Netzwerkanzeige nur bei Infrastruktur, Server, Geräte
+    bool showNetworkSection = currentObj != null &&
+                              (currentObj.NodeType == NodeType.Infrastruktur
+                               || currentObj.NodeType == NodeType.Server
+                               || currentObj.NodeType == NodeType.Geräte);
+
+    var netsMap = ViewBag.NetworksByObject as IDictionary<Guid, List<Network>> ?? new Dictionary<Guid, List<Network>>();
+
+    List<Network>? myNets = null;
+    bool hasMyNets = false;
+    if (currentObj != null)
+    {
+        hasMyNets = netsMap.TryGetValue(currentObj.Id, out myNets) && myNets?.Any() == true;
+    }
+
+    ViewBag.CurrentObjectId = currentObj?.Id;
+
+    var treeViewData = new ViewDataDictionary(ViewData)
+    {
+        ["ParentId"] = (Guid?)null,                     // Root-Ebene hat keinen Parent
+        ["CurrentId"] = currentObj?.Id,                 // für aktive Markierung / Offen halten
+        ["OpenIds"] = ViewBag.OpenIds ?? new HashSet<Guid>(),
+        ["LinkMap"] = linkMap                          // Dictionary<(Guid ParentId, Guid TargetId), Guid>
+    };
+
+    // --- Icon-Mapping für NodeType (Bootstrap Icons) ---
+    string IconFor(NodeType t) => t switch
+    {
+        NodeType.Ordner => "bi-folder2",
+        NodeType.Infrastruktur => "bi-hdd-network",
+        NodeType.Drittanbieter => "bi-building",
+        NodeType.Geräte => "bi-cpu",
+        NodeType.Server => "bi-server",
+        NodeType.Software => "bi-box-seam",
+        NodeType.Tresor => "bi-shield-lock",
+        NodeType.Hilfe => "bi-life-preserver",
+        NodeType.Webseiten => "bi-globe",
+        NodeType.Zugangsdaten => "bi-key",
+        _ => "bi-file-earmark"
+    };
+}
+
+<div class="row g-3">
+    <div class="col-12 col-lg-9">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                @if (Model.current is null)
+                {
+                    <p class="text-muted">Bitte links ein Objekt wählen.</p>
+                }
+                else
+                {
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div>
+                            <h5 class="mb-1">
+                                <i class="bi @IconFor(Model.current.NodeType) me-1 opacity-75"></i>
+                                @Model.current.Name
+                            </h5>
+                            <div class="text-muted">Ebene @Model.current.Level • @Model.current.NodeType</div>
+                        </div>
+
+                        <!-- Toolbar -->
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="btn-group">
+                                @if (Model.current.Level < 10)
+                                {
+                                    <button type="button" class="btn btn-sm btn-success" id="btnCreateChild">
+                                        <i class="bi bi-plus-lg me-1"></i>
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-sm btn-success" disabled title="Maximale Tiefe (10) erreicht">
+                                        <i class="bi bi-plus-lg me-1"></i>
+                                    </button>
+                                }
+
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="btnLink">
+                                    <i class="bi bi-link-45deg me-1"></i>
+                                </button>
+
+                                <a class="btn btn-sm btn-outline-secondary" id="btnEdit"
+                                   asp-action="Edit" asp-route-id="@Model.current.Id">
+                                    <i class="bi bi-pencil-square me-1"></i>
+                                </a>
+
+                                <form asp-action="Delete" method="post" class="d-inline"
+                                      onsubmit="return confirm('Diesen Knoten inkl. Inhalt löschen?');">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@Model.current.Id" />
+                                    <button class="btn btn-sm btn-outline-danger">
+                                        <i class="bi bi-trash me-1"></i>
+                                    </button>
+                                </form>
+                            </div>
+
+                            <!-- Link-Erstellung: erst sichtbar nach Klick auf "Verknüpfen" -->
+                            <div id="linkSearchWrap" class="d-none">
+                                <form id="linkCreateForm" class="d-inline ms-2" method="post"
+                                      asp-controller="Links" asp-action="Create">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="parentId" value="@Model.current.Id" />
+                                    <input type="hidden" name="targetId" id="linkTargetId" />
+                                    <div class="position-relative d-inline-block">
+                                        <input id="linkSearch"
+                                               class="form-control form-control-sm d-inline w-auto"
+                                               style="min-width:260px"
+                                               placeholder="Ziel suchen (mind. 2 Zeichen)..." autocomplete="off" />
+                                        <div id="linkResults" class="dropdown-menu p-0 shadow" style="max-height:260px; overflow:auto;"></div>
+                                    </div>
+                                    <button type="submit" class="btn btn-sm btn-outline-success ms-1" id="linkSubmit" disabled>
+                                        + Verknüpfung
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(Model.current.Description))
+                    {
+                        <p>@Model.current.Description</p>
+                    }
+
+                    @* ---------- WEB-INFOS (URL / Zugangsdaten) ---------- *@
+                    @if (isWeb || web != null)
+                    {
+                        <div class="card border-info mb-3">
+                            <div class="card-header">Web-Informationen</div>
+                            <div class="card-body">
+                                <div class="mb-2">
+                                    <div class="text-muted small">URL</div>
+                                    @{
+                                        var url = web?.Url ?? Model.current.Url;
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(url))
+                                    {
+                                        <a href="@url" target="_blank" rel="noopener noreferrer">@url</a>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">keine URL hinterlegt</span>
+                                    }
+                                </div>
+
+                                @if ((web?.Username != null) || (web?.HasPassword ?? false) || !string.IsNullOrWhiteSpace(web?.Notes))
+                                {
+                                    <hr class="my-2" />
+                                    <div class="row g-2">
+                                        @if (!string.IsNullOrWhiteSpace(web?.Username))
+                                        {
+                                            <div class="col-md-6">
+                                                <div class="text-muted small">Benutzername</div>
+                                                <div>@web!.Username</div>
+                                            </div>
+                                        }
+                                        @if (web?.HasPassword ?? false)
+                                        {
+                                            <div class="col-md-6">
+                                                <div class="text-muted small">Passwort</div>
+                                                <div data-pwdbox data-objectid="@web!.CredObjectId" data-timeout-ms="15000">
+                                                    <div class="d-inline-flex align-items-center gap-2">
+                                                        <span data-role="pwd">••••••••</span>
+                                                        <button type="button" class="btn btn-sm btn-outline-secondary" data-reveal-secret>anzeigen</button>
+                                                        <button type="button" class="btn btn-sm btn-outline-secondary" data-copy-secret>kopieren</button>
+                                                    </div>
+                                                    <div class="timeout-wrap mt-1 d-none"><div class="timeout-bar"></div></div>
+                                                </div>
+                                            </div>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(web?.Notes))
+                                        {
+                                            <div class="col-12">
+                                                <div class="text-muted small">Notizen</div>
+                                                <div>@web!.Notes</div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @* ---------- NETZWERK (Netze + IPs) ---------- *@
+                    @if (showNetworkSection)
+                    {
+                        <hr />
+                        <h6 class="mt-3">Netzwerk</h6>
+                        @if (hasMyNets)
+                        {
+                            <div class="mb-2">
+                                @foreach (var net in myNets!)
+                                {
+                                    <span class="badge text-bg-light me-1">@net.CidrNotation</span>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="text-muted mb-2">Keine Netze zugeordnet.</div>
+                        }
+                        <div class="d-flex gap-2 mb-2">
+                            <a class="btn btn-sm btn-outline-primary"
+                               asp-controller="Networks" asp-action="Create">
+                                Netz anlegen
+                            </a>
+                            <a class="btn btn-sm btn-outline-secondary"
+                               asp-controller="DeviceIps" asp-action="ForObject" asp-route-dokuObjectId="@Model.current.Id">
+                                IP-Adressen verwalten
+                            </a>
+                            <a class="btn btn-sm btn-outline-secondary"
+                               asp-controller="Networks" asp-action="Index">
+                                alle Netze
+                            </a>
+                        </div>
+                    }
+
+                    @* ---------- DATEIEN (bei Webseiten ausgeblendet) ---------- *@
+                    @if (!isWeb)
+                    {
+                        <hr />
+                        <h6 class="mt-3">Dateien</h6>
+                        @await Html.PartialAsync("~/Views/Files/_List.cshtml", Model.current)
+                    }
+                    else
+                    {
+                        <div class="alert alert-info">Für den Typ „Webseiten“ ist keine Dateiablage vorgesehen.</div>
+                    }
+
+                    @* ---------- Unterstruktur ---------- *@
+                    @if (Model.current.Children?.Any() == true)
+                    {
+                        <hr />
+                        <h6 class="mt-3">Unterstruktur</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0" id="childTable">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Typ</th>
+                                        <th>Ebene</th>
+                                        <th>Netze</th>
+                                        <th>IP-Adressen</th>
+                                        <th class="text-end">Aktionen</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var ch in Model.current.Children.OrderBy(c => c.SortOrder).ThenBy(c => c.Name))
+                                    {
+                                        var isLink = linkMap.TryGetValue((parentId, ch.Id), out var linkId);
+                                        var hasChildNets = netsMap.TryGetValue(ch.Id, out var childNets) && childNets?.Any() == true;
+
+                                        bool childAllowsNetwork = ch.NodeType == NodeType.Infrastruktur
+                                        || ch.NodeType == NodeType.Server
+                                        || ch.NodeType == NodeType.Geräte;
+
+                                        <tr class="child-row"
+                                            data-object-id="@ch.Id"
+                                            data-object-name="@ch.Name"
+                                            data-object-type="@ch.NodeType"
+                                            @(isLink ? $"data-link-id=\"{linkId}\"" : "")>
+                                            <td>
+                                                <a asp-action="Index" asp-route-id="@ch.Id" class="d-inline-flex align-items-center">
+                                                    <i class="bi @IconFor(ch.NodeType) me-1 opacity-75"></i>
+                                                    @ch.Name
+                                                </a>
+                                                @if (isLink)
+                                                {
+                                                    <span class="badge bg-secondary ms-1">Link</span>
+                                                }
+                                            </td>
+                                            <td>@ch.NodeType</td>
+                                            <td>@ch.Level</td>
+                                            <td>
+                                                @if (hasChildNets)
+                                                {
+                                                    @foreach (var net in childNets!)
+                                                    {
+                                                        <span class="badge text-bg-light me-1">@net.CidrNotation</span>
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">—</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (childAllowsNetwork)
+                                                {
+                                                    <a class="btn btn-sm btn-outline-secondary"
+                                                       asp-controller="DeviceIps" asp-action="ForObject" asp-route-dokuObjectId="@ch.Id">
+                                                        Verwalten
+                                                    </a>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">—</span>
+                                                }
+                                            </td>
+                                            <td class="text-end">
+                                                <div class="btn-group">
+                                                    <a class="btn btn-sm btn-outline-primary" asp-action="Edit" asp-route-id="@ch.Id">Bearb.</a>
+                                                    @if (isLink)
+                                                    {
+                                                        <form asp-controller="Links" asp-action="Delete" method="post" class="d-inline"
+                                                              onsubmit="return confirm('Verknüpfung entfernen?');">
+                                                            @Html.AntiForgeryToken()
+                                                            <input type="hidden" name="id" value="@linkId" />
+                                                            <button class="btn btn-sm btn-outline-warning">Link entfernen</button>
+                                                        </form>
+                                                    }
+                                                    else
+                                                    {
+                                                        <form asp-action="Delete" method="post" class="d-inline"
+                                                              onsubmit="return confirm('Knoten inkl. Inhalt löschen?');">
+                                                            @Html.AntiForgeryToken()
+                                                            <input type="hidden" name="id" value="@ch.Id" />
+                                                            <button class="btn btn-sm btn-outline-danger">Löschen</button>
+                                                        </form>
+                                                    }
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Hidden AntiForgery for JS -->
+<form id="afHolder" class="d-none">@Html.AntiForgeryToken()</form>
+
+<!-- Kontextmenü für VIRTUELLE Links im Baum (bestehend) -->
+<div id="linkMenu" class="dropdown-menu shadow" style="position:fixed; display:none; z-index:1080;">
+    <button class="dropdown-item" data-action="open">
+        <i class="bi bi-box-arrow-in-right me-2"></i>Öffnen
+    </button>
+    <button class="dropdown-item" data-action="edit">
+        <i class="bi bi-pencil-square me-2"></i>Link bearbeiten…
+    </button>
+    <div class="dropdown-divider"></div>
+    <button class="dropdown-item text-danger" data-action="delete">
+        <i class="bi bi-trash me-2"></i>Link löschen
+    </button>
+</div>
+
+<!-- Kontextmenü für Unterstruktur-Tabelle (reale + virtuelle) -->
+<div id="childMenu" class="dropdown-menu shadow" style="position:fixed; display:none; z-index:1080;">
+    <button class="dropdown-item c-go"><i class="bi bi-box-arrow-in-right me-2"></i>Ansicht (gehe zu)</button>
+    <button class="dropdown-item c-edit"><i class="bi bi-pencil-square me-2"></i>Bearbeiten</button>
+    <button class="dropdown-item c-link"><i class="bi bi-link-45deg me-2"></i>Verknüpfen / verlinken zu…</button>
+    <div class="dropdown-divider"></div>
+    <button class="dropdown-item text-danger c-delete"><i class="bi bi-trash me-2"></i>Löschen</button>
+</div>
+
+<!-- Modal zum Zielwechsel („Repoint“) -->
+<div class="modal fade" id="repointModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form id="repointForm">
+                <div class="modal-header">
+                    <h5 class="modal-title">Link bearbeiten</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="id" id="repointLinkId" />
+                    <label class="form-label">Neues Ziel suchen</label>
+                    <input id="repointSearch" class="form-control" placeholder="mind. 2 Zeichen…" autocomplete="off" />
+                    <div id="repointResults" class="list-group mt-2" style="max-height:240px; overflow:auto;"></div>
+                    <input type="hidden" name="newTargetId" id="repointTargetId" />
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                    <button type="submit" class="btn btn-primary" disabled id="repointSubmit">Speichern</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (() => {
+          // ---------- Passwort/Secret Anzeige (bestehender Code, unverändert) ----------
+          const DEFAULT_TIMEOUT = 15000; // ms
+          const qs = (root, sel) => root ? root.querySelector(sel) : null;
+          const getObjectId = (box) => box?.getAttribute('data-objectid');
+          function setEnabled(el, enabled) {
+            if (!el) return;
+            el.disabled = !enabled;
+            if (enabled) { el.removeAttribute('disabled'); el.classList.remove('disabled'); el.setAttribute('aria-disabled','false'); el.style.pointerEvents=''; }
+            else { el.setAttribute('disabled','disabled'); el.classList.add('disabled'); el.setAttribute('aria-disabled','true'); el.style.pointerEvents='none'; }
+          }
+          function startCountdown(box, ms) {
+            const wrap = qs(box, '.timeout-wrap'); const bar = qs(box, '.timeout-bar');
+            if (!wrap || !bar) return; wrap.classList.remove('d-none');
+            bar.style.transition='none'; bar.style.width='100%'; void bar.getBoundingClientRect();
+            bar.style.transition=`width ${ms}ms linear`; bar.style.width='0%';
+          }
+          function maskBox(box, masked=true, value="") {
+            const pwdEl=qs(box,'[data-role="pwd"]'); const btnShow=qs(box,'[data-reveal-secret]'); const btnCopy=qs(box,'[data-copy-secret]'); const wrap=qs(box,'.timeout-wrap');
+            if (box._pwdTimer) { clearTimeout(box._pwdTimer); box._pwdTimer=null; }
+            if (!pwdEl) return;
+            if (masked) { pwdEl.textContent='••••••••'; setEnabled(btnShow,true); setEnabled(btnCopy,true); if (wrap) wrap.classList.add('d-none'); box._pwdValue=null; }
+            else { pwdEl.textContent=value||''; setEnabled(btnShow,false); setEnabled(btnCopy,!!value);
+              const msAttr=parseInt(box.getAttribute('data-timeout-ms') || `${DEFAULT_TIMEOUT}`,10);
+              const ms=Number.isFinite(msAttr)?msAttr:DEFAULT_TIMEOUT; startCountdown(box,ms); box._pwdValue=value; box._pwdTimer=setTimeout(()=>maskBox(box,true),ms);
+            }
+          }
+          async function fetchPassword(objectId) {
+            const res = await fetch(`/Objects/RevealSecret?objectId=${encodeURIComponent(objectId)}`, { headers:{'Accept':'application/json'} });
+            if (!res.ok) throw new Error('Abruf fehlgeschlagen');
+            const data = await res.json(); return data?.password ?? '';
+          }
+          document.addEventListener('click', async (e) => {
+            const btn = e.target.closest('[data-reveal-secret]'); if (!btn) return; const box = btn.closest('[data-pwdbox]'); const objectId = getObjectId(box); if (!box || !objectId) return;
+            try { setEnabled(btn,false); const pwd=await fetchPassword(objectId); maskBox(box,false,pwd); } catch { alert('Passwort konnte nicht angezeigt werden.'); setEnabled(btn,true); }
+          });
+          document.addEventListener('click', async (e) => {
+            const btn = e.target.closest('[data-copy-secret]'); if (!btn) return; const box = btn.closest('[data-pwdbox]'); if (!box) return;
+            try { setEnabled(btn,false); let pwd = box._pwdValue; if (!pwd) { const objectId=getObjectId(box); if (!objectId) throw new Error('Kein ObjectId'); pwd = await fetchPassword(objectId); }
+              await navigator.clipboard.writeText(pwd||''); const prev=btn.textContent; btn.textContent='kopiert!'; setTimeout(()=>{ btn.textContent=prev; setEnabled(btn,true); },1000);
+            } catch { alert('Kopieren nicht möglich.'); setEnabled(btn,true); }
+          });
+          document.querySelectorAll('[data-pwdbox]').forEach((box)=>maskBox(box,true));
+        })();
+
+        // ---------- Toolbar: Unterstruktur + Verknüpfen-Suche ----------
+        (() => {
+          const token   = document.querySelector('#afHolder input[name="__RequestVerificationToken"]').value;
+          const current = '@Model.current?.Id';
+
+          // Unterstruktur
+          const btnCreateChild = document.getElementById('btnCreateChild');
+          btnCreateChild?.addEventListener('click', async () => {
+            const name = prompt('Name der Unterstruktur:');
+            if (!name) return;
+            const body = new URLSearchParams({ parentId: current, name });
+            const r = await fetch('@Url.Action("CreateChild", "Objects")', {
+              method: 'POST',
+              headers: { 'Content-Type':'application/x-www-form-urlencoded','RequestVerificationToken': token },
+              body
+            });
+            if (r.ok) location.reload(); else alert('Erstellen fehlgeschlagen.');
+          });
+
+          // Verknüpfen: Suche erst nach Klick zeigen
+          const btnLink = document.getElementById('btnLink');
+          const wrap    = document.getElementById('linkSearchWrap');
+          const form    = document.getElementById('linkCreateForm');
+          const input   = document.getElementById('linkSearch');
+          const list    = document.getElementById('linkResults');
+          const target  = document.getElementById('linkTargetId');
+          const submit  = document.getElementById('linkSubmit');
+          let aborter   = null;
+
+          btnLink?.addEventListener('click', () => {
+            wrap.classList.toggle('d-none');
+            if (!wrap.classList.contains('d-none')) input.focus();
+          });
+
+          function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
+          const search = debounce(async (term)=>{
+            list.innerHTML=''; target.value=''; submit.disabled=true;
+            if (!term || term.trim().length < 2) { list.classList.remove('show'); list.style.display='none'; return; }
+            if (aborter) aborter.abort(); aborter = new AbortController();
+            const url = '@Url.Action("Search", "Objects")' + '?term=' + encodeURIComponent(term) + '&excludeId=' + encodeURIComponent(current);
+            try {
+              const resp = await fetch(url, { signal: aborter.signal }); if (!resp.ok) return;
+              const data = await resp.json(); data.forEach(x=>{
+                const a=document.createElement('a'); a.href='#'; a.className='dropdown-item'; a.textContent=x.text;
+                a.onclick=(e)=>{ e.preventDefault(); target.value=x.id; input.value=x.text; submit.disabled=false; list.classList.remove('show'); list.style.display='none'; };
+                list.appendChild(a);
+              });
+              if (data.length){ list.classList.add('show'); list.style.display='block'; list.style.minWidth = input.offsetWidth + 'px'; }
+            } catch {}
+          },250);
+          input?.addEventListener('input', ()=>search(input.value));
+          document.addEventListener('click', (e)=>{ if(!list.contains(e.target) && e.target!==input){ list.classList.remove('show'); list.style.display='none'; } });
+          form?.addEventListener('submit', (e)=>{ if (!target.value) e.preventDefault(); });
+        })();
+        // ---------- Rechtsklick-Menü für Unterstruktur-Tabelle ----------
+        // ---------- Kontextmenü für virtuelle Links im TREE (bestehend) + Repoint mit Reload ----------
+        (() => {
+          // ===== Gemeinsame Config =====
+          const token = document.querySelector('#afHolder input[name="__RequestVerificationToken"]')?.value ?? '';
+
+          // Menüs
+          const menuTree  = document.getElementById('linkMenu');   // nur für virtuelle Links
+          const menuChild = document.getElementById('childMenu');  // für reale Tree-Knoten + Tabellenzeilen
+
+          // MVC-URLs
+          const urlGo      = '@Url.Action("Index", "Objects")';     // ?id={objectId}
+          const urlEdit    = '@Url.Action("Edit", "Objects")';      // ?id={objectId}
+          const urlDelObj  = '@Url.Action("Delete", "Objects")';    // POST id
+          const urlDelLnk  = '@Url.Action("Delete", "Links")';      // POST id
+          const urlSearch  = '@Url.Action("Search", "Objects")';
+          const urlRepoint = '@Url.Action("Repoint", "Links")';
+
+          // State
+          let currentTreeVirtualA = null;  // <a.tree-link.is-virtual>
+          let currentTreeRealA    = null;  // <a.tree-link> (ohne .is-virtual)
+          let currentRow          = null;  // <tr.child-row>
+
+          // ===== Utils =====
+          function clampAndShow(menu, x, y){
+            hideMenus();
+            if (!menu) return;
+            menu.style.display = 'block';
+            const vw = document.documentElement.clientWidth;
+            const vh = document.documentElement.clientHeight;
+            const r  = menu.getBoundingClientRect();
+            let left = x, top = y;
+            if (left + r.width  > vw) left = Math.max(0, vw - r.width  - 6);
+            if (top  + r.height > vh) top  = Math.max(0, vh - r.height - 6);
+            menu.style.left = left + 'px';
+            menu.style.top  = top  + 'px';
+            setTimeout(()=>menu.classList.add('show'),0);
+          }
+          function hideMenus(){
+            [menuTree, menuChild].forEach(m => { if(!m) return; m.classList.remove('show'); m.style.display='none'; });
+            currentTreeVirtualA = null;
+            currentTreeRealA    = null;
+            currentRow          = null;
+          }
+          function postForm(url, data){
+            return fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type':'application/x-www-form-urlencoded', 'RequestVerificationToken': token },
+              body: new URLSearchParams(data)
+            });
+          }
+          function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
+
+          // ===== EIN gemeinsamer contextmenu-Listener =====
+          document.addEventListener('contextmenu', (e) => {
+            // 1) Virtueller Tree-Link -> #linkMenu
+            const aVirtual = e.target.closest('a.tree-link.is-virtual');
+            if (aVirtual) {
+              e.preventDefault();
+              currentTreeVirtualA = aVirtual;
+              clampAndShow(menuTree, e.clientX, e.clientY);
+              return;
+            }
+
+            // 2) Realer Tree-Knoten -> #childMenu
+            const aReal = e.target.closest('a.tree-link');
+            if (aReal) {
+              e.preventDefault();
+              currentTreeRealA = aReal;
+              clampAndShow(menuChild, e.clientX, e.clientY);
+              return;
+            }
+
+            // 3) Tabellenzeile -> #childMenu
+            const row = e.target.closest('tr.child-row');
+            if (row) {
+              e.preventDefault();
+              currentRow = row;
+              clampAndShow(menuChild, e.clientX, e.clientY);
+              return;
+            }
+
+            // sonst: Standard-Menü zulassen
+          });
+
+          // ===== Global schließen =====
+          document.addEventListener('click', (e) => {
+            if ((!menuTree || !menuTree.contains(e.target)) && (!menuChild || !menuChild.contains(e.target))) hideMenus();
+          }, { capture:true });
+          window.addEventListener('resize', hideMenus);
+          window.addEventListener('scroll', hideMenus, true);
+          document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideMenus(); });
+
+          // ===== TREE-MENÜ (nur virtuelle Links) =====
+          menuTree?.addEventListener('click', async (e) => {
+            const btn = e.target.closest('[data-action]');
+            if (!btn || !currentTreeVirtualA) return;
+
+            const action   = btn.getAttribute('data-action');
+            const linkId   = currentTreeVirtualA.dataset.linkId;           // Pflicht bei virtuellen Links
+            const href     = currentTreeVirtualA.getAttribute('href');
+            const parentId = currentTreeVirtualA.dataset.parentId || '';
+
+            hideMenus();
+
+            if (action === 'open') {
+              window.location.href = href;
+              return;
+            }
+            if (action === 'delete') {
+              if (!confirm('Diesen Link wirklich löschen?')) return;
+              const r = await postForm(urlDelLnk, { id: linkId });
+              if (r.ok) location.reload(); else alert('Fehler beim Löschen.');
+              return;
+            }
+            if (action === 'edit') {
+              openRepointModal(linkId, parentId);
+              return;
+            }
+          });
+
+          // --- Repoint Modal (Tree) ---
+          const modal  = document.getElementById('repointModal');
+          const form   = document.getElementById('repointForm');
+          const inpId  = document.getElementById('repointLinkId');
+          const inpSrch= document.getElementById('repointSearch');
+          const lst    = document.getElementById('repointResults');
+          const inpTgt = document.getElementById('repointTargetId');
+          const btnOk  = document.getElementById('repointSubmit');
+          let aborter  = null, bsModal = null;
+
+          function openRepointModal(linkId, parentId){
+            if (!bsModal) bsModal = new bootstrap.Modal(modal);
+            inpId.value = linkId;
+            inpSrch.value = '';
+            lst.innerHTML = '';
+            inpTgt.value = '';
+            btnOk.disabled = true;
+            bsModal.show();
+            inpSrch.oninput = debounce(()=>doSearch(inpSrch.value, parentId), 250);
+            setTimeout(()=>inpSrch.focus(), 150);
+          }
+          async function doSearch(term, excludeId){
+            lst.innerHTML=''; inpTgt.value=''; btnOk.disabled=true;
+            if (!term || term.trim().length < 2) return;
+            if (aborter) aborter.abort(); aborter = new AbortController();
+            const url = `${urlSearch}?term=${encodeURIComponent(term)}&excludeId=${encodeURIComponent(excludeId||'')}`;
+            try{
+              const resp = await fetch(url, { signal: aborter.signal });
+              if (!resp.ok) return;
+              const data = await resp.json();
+              data.forEach(x => {
+                const a = document.createElement('a');
+                a.href = '#';
+                a.className = 'list-group-item list-group-item-action';
+                a.textContent = x.text;
+                a.onclick = (ev) => {
+                  ev.preventDefault();
+                  inpTgt.value = x.id;
+                  Array.from(lst.children).forEach(c => c.classList.remove('active'));
+                  a.classList.add('active');
+                  btnOk.disabled = false;
+                };
+                lst.appendChild(a);
+              });
+            } catch {}
+          }
+          form?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = inpId.value, newTargetId = inpTgt.value;
+            if (!id || !newTargetId) return;
+            const r = await postForm(urlRepoint, { id, newTargetId });
+            if (r.ok) { bootstrap.Modal.getOrCreateInstance(modal).hide(); location.reload(); }
+            else if (r.status === 409) alert('Ein identischer Link existiert bereits.');
+            else alert('Bearbeiten fehlgeschlagen.');
+          });
+
+          // ===== CHILD-MENÜ (reale Tree-Knoten ODER Tabellenzeilen) =====
+          function getChildSelection(){
+            // Tabellenzeile hat Vorrang
+            if (currentRow) {
+              return {
+                id:   currentRow.dataset.objectId,
+                link: currentRow.dataset.linkId || '',
+                href: null
+              };
+            }
+            // Reale Tree-Links
+            if (currentTreeRealA) {
+              return {
+                id:   currentTreeRealA.dataset.objectId,
+                link: currentTreeRealA.dataset.linkId || '',
+                href: currentTreeRealA.getAttribute('href')
+              };
+            }
+            return null;
+          }
+
+          menuChild?.querySelector('.c-go')?.addEventListener('click', () => {
+            const sel = getChildSelection(); if (!sel) return; hideMenus();
+            // Wenn aus Tree: nutze das vorhandene href, sonst baue URL
+            if (sel.href) window.location.href = sel.href;
+            else window.location.href = `${urlGo}?id=${encodeURIComponent(sel.id)}`;
+          });
+
+          menuChild?.querySelector('.c-edit')?.addEventListener('click', () => {
+            const sel = getChildSelection(); if (!sel) return; hideMenus();
+            window.location.href = `${urlEdit}?id=${encodeURIComponent(sel.id)}`;
+          });
+
+          menuChild?.querySelector('.c-link')?.addEventListener('click', () => {
+            hideMenus();
+            const wrap  = document.getElementById('linkSearchWrap');
+            const input = document.getElementById('linkSearch');
+            if (wrap) { wrap.classList.remove('d-none'); input?.focus(); }
+          });
+
+          menuChild?.querySelector('.c-delete')?.addEventListener('click', async () => {
+            const sel = getChildSelection(); if (!sel) return; hideMenus();
+
+            if (sel.link) {
+              if (!confirm('Diesen Link wirklich löschen?')) return;
+              const r = await postForm(urlDelLnk, { id: sel.link });
+              if (r.ok) location.reload(); else alert('Link löschen fehlgeschlagen.');
+            } else {
+              if (!confirm('Diesen Knoten inkl. Inhalt löschen?')) return;
+              const r = await postForm(urlDelObj, { id: sel.id });
+              if (r.ok) location.reload(); else alert('Objekt löschen fehlgeschlagen.');
+            }
+          });
+        })();
+    </script>
+    <style>
+        /* Kontextmenü kompakter & dezenter */
+        #linkMenu.dropdown-menu,
+        #childMenu.dropdown-menu {
+            font-size: .85rem; /* kleinere Schrift */
+            padding: .25rem 0; /* weniger Innenabstand */
+            min-width: 10rem; /* schmaler */
+        }
+
+        #linkMenu .dropdown-item,
+        #childMenu .dropdown-item {
+            padding: .25rem .75rem; /* schlanke Buttons */
+            line-height: 1.2;
+        }
+
+        #linkMenu .dropdown-divider,
+        #childMenu .dropdown-divider {
+            margin: .25rem 0; /* weniger Platz zwischen Divider und Items */
+        }
+
+        .tree .tree-caret {
+            display: inline-block;
+            width: .9rem; /* narrower */
+            text-align: center;
+            margin-right: .1rem; /* closer to icon */
+            cursor: pointer;
+            font-weight: 700;
+        }
+        /* placeholder for leaf rows so names align with caret rows */
+        .tree .tree-caret-placeholder {
+            display: inline-block;
+            width: .9rem;
+            margin-right: .1rem;
+        }
+        /* type icon right next to caret (override Bootstrap me-1 etc.) */
+        .tree .tree-link .bi {
+            margin-right: .15rem !important; /* was .25rem/.5rem, make tighter */
+        }
+        /* eingeklappt = [+] */
+        .tree .tree-caret.collapsed::before {
+            content: "[>]";
+        }
+
+        /* aufgeklappt = [–] */
+        .tree .tree-caret.expanded::before {
+            content: "[v]";
+        }
+
+        .tree ul, .tree li {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+            .tree li::before {
+                content: none !important;
+            }
+
+        .tree .tree-children {
+            border-left: 1px dashed rgba(0,0,0,.08);
+            border-left: none; /* remove vertical guide */
+            padding-left: 0; /* remove built-in padding */
+            margin-left: 12px; /* compact indent for each level */
+            /*padding-left: .5rem;*/
+        }
+
+        .tree .tree-link {
+            display: inline-flex;
+            align-items: center;
+            gap: .05rem; /* sehr kleiner Abstand zwischen caret, Icon und Text */
+            padding: .125rem .25rem;
+            border-radius: .375rem;
+            text-decoration: none;
+        }
+
+            .tree .tree-link.active {
+                background: rgba(13,110,253,.08);
+            }
+
+        .timeout-wrap {
+            height: 4px;
+            background: rgba(0,0,0,.08);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .tree {
+            padding-left: 10px;
+        }
+
+        .timeout-bar {
+            height: 4px;
+            width: 0;
+            background: rgba(13,110,253,.6);
+        }
+    </style>
+}

@@ -1,0 +1,19 @@
+@model (Guid objectId, IDictionary<Guid, List<Network>> map)
+@{
+    var has = Model.map.TryGetValue(Model.objectId, out var list) && list?.Any() == true;
+}
+@if (!has)
+{
+    <span class="text-muted">—</span>
+}
+else
+{
+    foreach (var n in list!)
+    {
+        <span class="badge text-bg-light me-1">@n.CidrNotation</span>
+    }
+}
+<a class="btn btn-sm btn-outline-primary ms-1"
+   asp-controller="Networks" asp-action="Create" title="Netz anlegen">
+    +
+</a>

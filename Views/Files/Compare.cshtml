@@ -1,0 +1,119 @@
+@model ITDoku.Models.FileCompareVm
+@{
+    ViewData["Title"] = "Vergleich – " + Model.File.FileName;
+}
+
+<div class="card shadow-sm">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <div>
+      <strong>Vergleich:</strong> @Model.File.FileName
+      <div class="small text-muted">@($"Version {Model.A.Version}") ↔ @($"Version {Model.B.Version}")</div>
+    </div>
+    <div>
+      <a class="btn btn-sm btn-outline-secondary" asp-action="Versions" asp-route-fileId="@Model.File.Id">Zurück zu Versionen</a>
+    </div>
+  </div>
+
+  <div class="card-body">
+    @if (!Model.IsText)
+    {
+        <div class="alert alert-info">Binärdatei: inhaltlicher Diff nicht verfügbar.</div>
+    }
+    else
+    {
+        <div class="d-flex justify-content-end mb-2">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="syncScroll" checked>
+              <label class="form-check-label" for="syncScroll">Scroll synchronisieren</label>
+            </div>
+        </div>
+
+        <div class="diff-grid">
+          <!-- LINKS -->
+          <div class="diff-col">
+            <div class="diff-head">Links: @($"Version {Model.A.Version}")</div>
+            <div class="diff-scroll" id="leftPane">
+              <table class="diff-table">
+                <tbody>
+                @{
+                  var rows = Model.Lines;
+                  for (int i = 0; i < rows.Count; i++)
+                  {
+                      var d = rows[i];
+                      var rowNo = i + 1;
+                      // Farbe immer auf BEIDEN Seiten setzen
+                      var color = d.Status == "add" ? "add"
+                                 : d.Status == "remove" ? "remove"
+                                 : d.Status == "change" ? "change" : "";
+                }
+                for (int i = 0; i < rows.Count; i++)
+                {
+                    var d = rows[i];
+                    var rowNo = i + 1;
+                    var color = d.Status == "add" ? "add"
+                               : d.Status == "remove" ? "remove"
+                               : d.Status == "change" ? "change" : "";
+                <tr>
+                  <td class="ln">@rowNo</td>
+                  <td class="cell @color">@((object)(d.Left ?? "\u00A0"))</td>
+                </tr>
+                }
+                }
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- RECHTS -->
+          <div class="diff-col">
+            <div class="diff-head">Rechts: @($"Version {Model.B.Version}")</div>
+            <div class="diff-scroll" id="rightPane">
+              <table class="diff-table">
+                <tbody>
+                @{
+                  var rows2 = Model.Lines;
+                  for (int i = 0; i < rows2.Count; i++)
+                  {
+                      var d = rows2[i];
+                      var rowNo = i + 1;
+                      var color = d.Status == "add" ? "add"
+                                 : d.Status == "remove" ? "remove"
+                                 : d.Status == "change" ? "change" : "";
+                <tr>
+                  <td class="ln">@rowNo</td>
+                  <td class="cell @color">@((object)(d.Right ?? "\u00A0"))</td>
+                </tr>
+                }
+                }
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="diff-legend small text-muted mt-2">
+          <span class="badge bg-success">+</span> hinzugefügt
+          <span class="badge bg-danger">−</span> gelöscht
+          <span class="badge bg-warning text-dark">±</span> geändert
+        </div>
+    }
+  </div>
+</div>
+
+@section Scripts{
+<script>
+(() => {
+  const left  = document.getElementById('leftPane');
+  const right = document.getElementById('rightPane');
+  const chk   = document.getElementById('syncScroll');
+  if (!left || !right || !chk) return;
+  let syncing = false;
+  function mirror(src, dst) {
+    if (!chk.checked || syncing) return;
+    syncing = true; dst.scrollTop = src.scrollTop; dst.scrollLeft = src.scrollLeft; syncing = false;
+  }
+  left .addEventListener('scroll', () => mirror(left , right));
+  right.addEventListener('scroll', () => mirror(right, left ));
+})();
+</script>
+}

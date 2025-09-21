@@ -1,0 +1,195 @@
+@model ITDoku.Models.DokuObjectEditVm
+@using ITDoku.Models
+@{
+    ViewData["Title"] = Model.Item.Id == Guid.Empty ? "Objekt anlegen" : "Objekt bearbeiten";
+}
+
+<div class="row justify-content-center">
+ <div class="col-12 col-lg-8">
+  <div class="card shadow-sm">
+   <div class="card-body">
+    <form id="objForm" method="post" data-current-level="@Model.Item.Level">
+      @Html.AntiForgeryToken()
+
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Name</label>
+          <input asp-for="Item.Name" class="form-control" />
+          <span asp-validation-for="Item.Name" class="text-danger"></span>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Typ</label>
+          <select asp-for="Item.NodeType" class="form-select" asp-items="Html.GetEnumSelectList<NodeType>()" id="nodeType"></select>
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Übergeordneter Ordner</label>
+          <select asp-for="Item.ParentId" class="form-select" asp-items="Model.ParentOptions"></select>
+          <span class="form-text">Leer = Root.</span>
+        </div>
+
+        <!-- Ebene + Sortierung: AUSBLENDEN bei Webseiten -->
+        <div class="col-md-3 web-hide">
+          <label class="form-label">Ebene</label>
+          <input asp-for="Item.Level" class="form-control" readonly />
+        </div>
+        <div class="col-md-3 web-hide">
+          <label class="form-label">Sortierung</label>
+          <input asp-for="Item.SortOrder" class="form-control" />
+        </div>
+
+        <!-- URL: NUR bei Webseiten -->
+        <div class="col-12 web-only d-none">
+          <label class="form-label">URL</label>
+          <input asp-for="Item.Url" class="form-control" placeholder="https://…" id="urlField" />
+          <span asp-validation-for="Item.Url" class="text-danger"></span>
+        </div>
+
+        <div class="col-12">
+          <label class="form-label">Beschreibung</label>
+          <textarea asp-for="Item.Description" class="form-control" rows="3"></textarea>
+        </div>
+      </div>
+
+      @* --- NUR für Typ Zugangsdaten (9) --- *@
+      <div class="row g-3 secret-only d-none mt-1">
+        <div class="col-md-6">
+          <label class="form-label">Benutzername</label>
+          <input asp-for="CredUsername" class="form-control" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Passwort</label>
+          <input asp-for="CredPassword" type="password" class="form-control" autocomplete="new-password" />
+          <div class="form-text">Leer lassen = Passwort unverändert.</div>
+        </div>
+        <div class="col-12">
+          <label class="form-label">Notizen</label>
+          <textarea asp-for="CredNotes" class="form-control" rows="2"></textarea>
+        </div>
+      </div>
+
+      <div class="mt-3 d-flex gap-2">
+        <button class="btn btn-primary">Speichern</button>
+        <a asp-action="Index" class="btn btn-outline-secondary">Abbrechen</a>
+      </div>
+    </form>
+   </div>
+  </div>
+ </div>
+</div>
+
+@* Modal: „Zugangsdaten anlegen?“ – mit Feldern *@
+<div class="modal fade" id="credsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Zugangsdaten anlegen?</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+      </div>
+      <div class="modal-body">
+        <p>Möchtest du für diese Webseite Zugangsdaten hinterlegen?</p>
+        <div class="mb-2">
+          <label class="form-label">Benutzername (optional)</label>
+          <input type="text" class="form-control" id="mUser">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Passwort (optional)</label>
+          <input type="password" class="form-control" id="mPass" autocomplete="new-password">
+        </div>
+        <div>
+          <label class="form-label">Notizen (optional)</label>
+          <textarea class="form-control" id="mNotes" rows="2"></textarea>
+        </div>
+        <div class="form-text">Es wird eine Unterstruktur „Zugangsdaten“ (Typ 9) erstellt – sofern die maximale Tiefe (5) nicht überschritten wird.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" id="credsNo" data-bs-dismiss="modal">Nein</button>
+        <button type="button" class="btn btn-primary" id="credsYes">Ja, anlegen</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+@section Scripts{
+<partial name="_ValidationScriptsPartial" />
+<script>
+(function(){
+  const form = document.getElementById('objForm');
+  const sel  = document.getElementById('nodeType');
+  const url  = document.getElementById('urlField');
+  const webOnly    = document.querySelectorAll('.web-only');
+  const webHide    = document.querySelectorAll('.web-hide');
+  const secretOnly = document.querySelectorAll('.secret-only');
+
+  const mEl = document.getElementById('credsModal');
+  let modal;
+
+  const isSel = (val,text, code) => (val === String(code)) || (text === text && text === val) || (text === 'Webseiten' && code===8 && (val==='Webseiten'));
+  function isWebCurrent() {
+    const val  = sel?.value ?? '';
+    const txt  = sel?.selectedOptions?.[0]?.text ?? '';
+    return (val === '8') || (txt === 'Webseiten');
+  }
+  function isSecretCurrent() {
+    const val  = sel?.value ?? '';
+    const txt  = sel?.selectedOptions?.[0]?.text ?? '';
+    return (val === '9') || (txt === 'Zugangsdaten');
+  }
+
+  function toggleBlocks() {
+    const web = isWebCurrent();
+    const sec = isSecretCurrent();
+    webOnly.forEach(x => x.classList.toggle('d-none', !web));
+    webHide.forEach(x => x.classList.toggle('d-none',  web));
+    secretOnly.forEach(x => x.classList.toggle('d-none', !sec));
+  }
+  sel?.addEventListener('change', toggleBlocks);
+  toggleBlocks(); // initial
+
+  function ensureHidden(name, value){
+    const old = form.querySelector(`input[name="${name}"]`);
+    if (old) old.remove();
+    const h = document.createElement('input');
+    h.type = 'hidden'; h.name = name; h.value = value ?? '';
+    form.appendChild(h);
+  }
+
+  form.addEventListener('submit', (e) => {
+    const isWeb = isWebCurrent();
+    if (!isWeb) return; // normal submit für alles außer Webseiten
+
+    // URL Pflicht
+    if (!url.value || !/^https?:\/\//i.test(url.value)) {
+      e.preventDefault();
+      url.focus();
+      return;
+    }
+
+    // Level prüfen (max Tiefe 5 => Webseite darf ein Kind haben, wenn current Level < 5)
+    const curLevel = parseInt(form.dataset.currentLevel || '0', 10);
+    if (curLevel >= 10) return; // kein Kind mehr möglich -> normal submit
+
+    // „beim Speichern fragen“: Modal zeigen und Submit stoppen
+    e.preventDefault();
+    modal = bootstrap.Modal.getOrCreateInstance(mEl);
+    modal.show();
+  });
+
+  document.getElementById('credsNo')?.addEventListener('click', () => {
+    // ohne Zugangsdaten speichern
+    ensureHidden('CreateCredentials', 'false');
+    form.submit();
+  });
+
+  document.getElementById('credsYes')?.addEventListener('click', () => {
+    // Werte als Hidden erzeugen und mitsenden
+    ensureHidden('CreateCredentials', 'true');
+    ensureHidden('CredUsername', document.getElementById('mUser').value);
+    ensureHidden('CredPassword', document.getElementById('mPass').value);
+    ensureHidden('CredNotes',    document.getElementById('mNotes').value);
+    modal?.hide();
+    form.submit();
+  });
+})();
+</script>
+}

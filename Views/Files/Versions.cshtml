@@ -1,0 +1,70 @@
+@model ITDoku.Models.DokuFile
+@{
+    ViewData["Title"] = "Versionen – " + Model.FileName;
+    var versionsDesc = Model.Versions.OrderByDescending(x => x.Version).ToList();
+    var currentId = versionsDesc.FirstOrDefault()?.Id;
+}
+<div class="card shadow-sm">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <div>
+      <strong>@Model.FileName</strong>
+            <div class="small text-muted">Aktuelle Version: @Model.Version • Objekt: @Model.DokuObject?.Name</div>
+    </div>
+    <div>
+      <a class="btn btn-sm btn-outline-secondary"
+         asp-controller="Objects" asp-action="Index" asp-route-id="@Model.ObjectId">Zurück</a>
+    </div>
+  </div>
+
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th>Version</th>
+            <th>Größe</th>
+            <th>Typ</th>
+            <th>Erstellt</th>
+            <th>Von</th>
+            <th class="text-end">Aktionen</th>
+          </tr>
+        </thead>
+        <tbody>
+@for (int i = 0; i < versionsDesc.Count; i++)
+{
+    var v = versionsDesc[i];
+    var prev = versionsDesc.FirstOrDefault(x => x.Version == v.Version - 1);
+    <tr>
+      <td>
+        @* Klick auf Versionsnummer: vergleiche mit der vorherigen Version (falls vorhanden) *@
+        @if (prev != null) {
+          <a asp-action="Compare" asp-route-a="@prev.Id" asp-route-b="@v.Id" class="link-body-emphasis">v@v.Version</a>
+        } else {
+          <span>v@v.Version</span>
+        }
+        @* Zusatz: mit aktueller vergleichen (falls diese Zeile nicht die aktuelle ist) *@
+        @if (currentId.HasValue && currentId.Value != v.Id) {
+          <a asp-action="Compare" asp-route-a="@v.Id" asp-route-b="@currentId.Value"
+             class="ms-2 small text-decoration-underline">mit aktuell</a>
+        }
+      </td>
+      <td>@String.Format("{0:N0}", v.ByteSize) B</td>
+      <td>@(string.IsNullOrEmpty(v.ContentType) ? "n/a" : v.ContentType)</td>
+      <td>@v.CreatedAt.ToLocalTime().ToString("g")</td>
+      <td>@v.CreatedBy</td>
+      <td class="text-end">
+        <a class="btn btn-sm btn-outline-secondary" asp-action="DownloadVersion" asp-route-id="@v.Id">Download</a>
+        <form asp-action="Restore" method="post" class="d-inline"
+              onsubmit="return confirm('Diese Version als aktuelle wiederherstellen?');">
+          @Html.AntiForgeryToken()
+          <input type="hidden" name="id" value="@v.Id" />
+          <button class="btn btn-sm btn-outline-primary">Wiederherstellen</button>
+        </form>
+      </td>
+    </tr>
+}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

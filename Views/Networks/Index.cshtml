@@ -1,0 +1,60 @@
+@model IEnumerable<Network>
+@{
+    ViewData["Title"] = "Netze";
+}
+<div class="d-flex justify-content-between align-items-center">
+    <h4>@ViewData["Title"]</h4>
+    <a class="btn btn-success" asp-action="Create">+ Netz anlegen</a>
+</div>
+<hr />
+
+<table class="table table-sm align-middle">
+    <thead>
+        <tr>
+            <th>Netz (CIDR)</th>
+            <th>Beschreibung</th>
+            <th>DHCP-Bereich</th>
+            <th>DNS</th>
+            <th>Zugeordnet an</th>
+            <th style="width:220px;"></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var n in Model)
+        {
+            <tr>
+                <td class="font-monospace">@n.CidrNotation</td>
+                <td>@n.Description</td>
+                <td>@(string.Join(" - ", new[] { n.DhcpRangeStart, n.DhcpRangeEnd }.Where(s => !string.IsNullOrWhiteSpace(s))))</td>
+                <td>@n.DnsServer</td>
+                <td>
+                    @if (n.AssignedToDokuObjectId.HasValue && n.AssignedToDokuObject != null)
+                    {
+                        <a asp-controller="Objects" asp-action="Details" asp-route-id="@n.AssignedToDokuObjectId">
+                            @n.AssignedToDokuObject.Name
+                        </a>
+                    }
+                    else
+                    {
+                        <span class="text-muted">—</span>
+                    }
+                </td>
+                <td class="text-end">
+                    @if (n.AssignedToDokuObjectId.HasValue)
+                    {
+                        <a class="btn btn-sm btn-outline-secondary me-1"
+                           asp-controller="DeviceIps" asp-action="ForObject"
+                           asp-route-dokuObjectId="@n.AssignedToDokuObjectId">
+                            IP-Adressen des Objekts
+                        </a>
+                    }
+                    <a class="btn btn-sm btn-outline-primary me-1" asp-action="Edit" asp-route-id="@n.NetworkId">Bearbeiten</a>
+                    <form asp-action="Delete" asp-route-id="@n.NetworkId" method="post" class="d-inline"
+                          onsubmit="return confirm('Netz löschen?');">
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Löschen</button>
+                    </form>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>

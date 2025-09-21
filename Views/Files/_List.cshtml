@@ -1,0 +1,123 @@
+@model ITDoku.Models.DokuObject
+@using ITDoku.Models
+
+@{
+    var web = ViewBag.WebInfo as WebInfoVm;
+    bool isWeb = Model.NodeType == NodeType.Webseiten;
+}
+
+<div>
+
+  @* ==== Web-Info-Karte (URL + Zugangsdaten) ==== *@
+  @if (isWeb || web != null)
+  {
+    <div class="card border-info mb-3">
+      <div class="card-header">Web-Informationen</div>
+      <div class="card-body">
+        <div class="mb-2">
+          <div class="text-muted small">URL</div>
+          @if (!string.IsNullOrWhiteSpace(web?.Url ?? Model.Url))
+          {
+            var url = web?.Url ?? Model.Url!;
+            <a href="@url" target="_blank" rel="noopener noreferrer">@url</a>
+          }
+          else
+          {
+            <span class="text-muted">keine URL hinterlegt</span>
+          }
+        </div>
+
+        @* Zugangsdaten (falls vorhanden) *@
+        @if (web?.Username != null || (web?.HasPassword ?? false) || !string.IsNullOrWhiteSpace(web?.Notes))
+        {
+          <hr class="my-2" />
+          <div class="row g-2">
+            @if (!string.IsNullOrWhiteSpace(web?.Username))
+            {
+              <div class="col-md-6">
+                <div class="text-muted small">Benutzername</div>
+                <div>@web.Username</div>
+              </div>
+            }
+            @if (web?.HasPassword ?? false)
+            {
+              <div class="col-md-6">
+                <div class="text-muted small">Passwort</div>
+                <div>
+                  <span id="pwdMask">••••••••</span>
+                  @if (web?.CredObjectId != null)
+                  {
+                    <button type="button" class="btn btn-sm btn-outline-secondary ms-2"
+                            data-reveal-secret data-objectid="@web.CredObjectId">anzeigen</button>
+                  }
+                </div>
+              </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(web?.Notes))
+            {
+              <div class="col-12">
+                <div class="text-muted small">Notizen</div>
+                <div>@web!.Notes</div>
+              </div>
+            }
+          </div>
+        }
+      </div>
+    </div>
+  }
+
+  @* ==== Datei-Ablage ==== *@
+  @if (!isWeb)
+  {
+    <form id="upload-form" asp-controller="Files" asp-action="Upload"
+          method="post" enctype="multipart/form-data"
+          class="d-flex gap-2 align-items-center mb-2">
+      @Html.AntiForgeryToken()
+      <input type="hidden" name="objectId" value="@Model.Id" />
+      <input type="file" name="file" class="form-control" />
+      <input type="text" name="note" class="form-control" placeholder="Notiz (optional)" />
+      <button class="btn btn-sm btn-primary">Hochladen</button>
+    </form>
+
+    <table class="table table-sm align-middle">
+      <thead><tr><th>Name</th><th>Größe</th><th>Version</th><th class="text-end">Aktionen</th></tr></thead>
+      <tbody>
+      @foreach (var f in Model.Files.OrderByDescending(f => f.UpdatedAt ?? f.CreatedAt))
+      {
+        var modalId = $"cmp-{f.Id}";
+        var versions = (f.Versions ?? new List<DokuFileVersion>()).OrderByDescending(v => v.Version).ToList();
+        <tr>
+          <td>@f.FileName <div class="small text-muted">@f.Note</div></td>
+          <td>@String.Format("{0:N0}", f.ByteSize) B</td>
+          <td>
+            @if (versions.Count >= 2) {
+              <a href="#" data-bs-toggle="modal" data-bs-target="#@modalId">@($"v{f.Version}")</a>
+            } else {
+              <span>@($"v{f.Version}")</span>
+            }
+          </td>
+          <td class="text-end">
+            <a class="btn btn-sm btn-outline-secondary"
+               asp-controller="Files" asp-action="Download" asp-route-id="@f.Id">Download</a>
+            <a class="btn btn-sm btn-outline-dark"
+               asp-controller="Files" asp-action="Versions" asp-route-fileId="@f.Id">Versionen</a>
+            <form asp-controller="Files" asp-action="Delete" method="post" class="d-inline"
+                  onsubmit="return confirm('Datei inkl. Versionen löschen?');">
+              @Html.AntiForgeryToken()
+              <input type="hidden" name="id" value="@f.Id" />
+              <button class="btn btn-sm btn-outline-danger">Löschen</button>
+            </form>
+          </td>
+        </tr>
+
+        @* (Modals nach Tabelle ausgeben – falls du sie nutzt) *@
+      }
+      </tbody>
+    </table>
+  }
+  else
+  {
+    @* Bei Webseiten: KEINE Dateiablage anzeigen *@
+    <div class="alert alert-info">Für den Typ „Webseiten“ ist keine Dateiablage vorgesehen.</div>
+  }
+</div>

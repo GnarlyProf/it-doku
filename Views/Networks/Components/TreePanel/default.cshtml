@@ -1,0 +1,27 @@
+@using ITDoku.Models
+@model ITDoku.TreePanel.TreePanelVm
+@{
+    var treeViewData = new ViewDataDictionary(ViewData)
+    {
+        ["ParentId"] = (Guid?)null,
+        ["CurrentId"] = Model.CurrentId,
+        ["OpenIds"] = Model.OpenIds,
+        ["LinkMap"] = Model.LinkMap
+    };
+}
+<div class="card shadow-sm">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span class="fw-semibold">Struktur</span>
+        <a class="btn btn-sm btn-primary" asp-controller="Objects" asp-action="Create">Neu</a>
+    </div>
+    <div class="card-body p-2 small">
+        @if (TempData["Info"] is string infoMsg)
+        {
+            <div class="alert alert-info alert-dismissible fade show my-2" role="alert">
+                @infoMsg
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        }
+        @await Html.PartialAsync("_Tree", (IEnumerable<DokuObject>)Model.Roots, treeViewData)
+    </div>
+</div>

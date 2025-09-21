@@ -1,0 +1,18 @@
+@model NetworkEditVm
+@{
+    ViewData["Title"] = "Netz bearbeiten";
+}
+<h4>@ViewData["Title"]</h4>
+<hr />
+<form asp-action="Edit" method="post" asp-antiforgery="true">
+    <input asp-for="NetworkId" type="hidden" />
+    @await Html.PartialAsync("_Form", Model)
+    <div class="mt-3 d-flex gap-2">
+        <button class="btn btn-primary">Speichern</button>
+        <a class="btn btn-outline-secondary" asp-action="Index">Zurück</a>
+    </div>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

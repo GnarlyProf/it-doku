@@ -1,0 +1,48 @@
+@model NetworkEditVm
+
+<div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+<div class="row g-3">
+    <div class="col-md-4">
+        <label asp-for="CidrNotation" class="form-label"></label>
+        <input asp-for="CidrNotation" class="form-control" placeholder="172.23.56.0/24" />
+        <div class="form-text">IPv4 mit Präfix, z. B. 172.23.56.0/24</div>
+        <span asp-validation-for="CidrNotation" class="text-danger"></span>
+    </div>
+    <div class="col-md-8">
+        <label asp-for="Description" class="form-label"></label>
+        <input asp-for="Description" class="form-control" />
+        <span asp-validation-for="Description" class="text-danger"></span>
+    </div>
+
+    <div class="col-md-4">
+        <label asp-for="DhcpRangeStart" class="form-label">DHCP Start</label>
+        <input asp-for="DhcpRangeStart" class="form-control" placeholder="172.23.56.100" />
+        <span asp-validation-for="DhcpRangeStart" class="text-danger"></span>
+    </div>
+    <div class="col-md-4">
+        <label asp-for="DhcpRangeEnd" class="form-label">DHCP Ende</label>
+        <input asp-for="DhcpRangeEnd" class="form-control" placeholder="172.23.56.200" />
+        <span asp-validation-for="DhcpRangeEnd" class="text-danger"></span>
+    </div>
+    <div class="col-md-4">
+        <label asp-for="DnsServer" class="form-label">DNS</label>
+        <input asp-for="DnsServer" class="form-control" placeholder="172.23.56.1" />
+        <span asp-validation-for="DnsServer" class="text-danger"></span>
+    </div>
+
+    <div class="col-md-6">
+        <label class="form-label">Zugeordnet zu (optional)</label>
+        <select class="form-select" asp-for="AssignedToDokuObjectId">
+            <option value="">— keine —</option>
+            @if (Model.AssignableObjects != null)
+            {
+                foreach (var o in Model.AssignableObjects)
+                {
+                    var selected = (Model.AssignedToDokuObjectId.HasValue && Model.AssignedToDokuObjectId.Value == o.id) ? "selected" : "";
+                    <option value="@o.id" selected="@selected">@o.name</option>
+                }
+            }
+        </select>
+    </div>
+</div>

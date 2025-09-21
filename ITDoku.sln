@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36408.4 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ITDoku", "ITDoku.csproj", "{7D09E042-0673-8DFF-06BB-7B722A4B727D}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7D09E042-0673-8DFF-06BB-7B722A4B727D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7D09E042-0673-8DFF-06BB-7B722A4B727D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7D09E042-0673-8DFF-06BB-7B722A4B727D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7D09E042-0673-8DFF-06BB-7B722A4B727D}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {7EB706E7-841D-41CE-803C-4E4154523EC9}
+	EndGlobalSection
+EndGlobal

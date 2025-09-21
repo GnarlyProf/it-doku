@@ -1,0 +1,45 @@
+@using ITDoku.Models
+@model IEnumerable<DeviceIp>
+
+@{
+    var items = Model ?? Enumerable.Empty<DeviceIp>();
+}
+
+<table class="table table-sm align-middle">
+    <thead>
+        <tr>
+            <th>IP</th>
+            <th>Maske</th>
+            <th>Gateway</th>
+            <th>Typ</th>
+            <th>VLAN</th>
+            <th>Interface</th>
+            <th style="width:140px;"></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var ip in items)
+        {
+            <tr>
+                <td>@ip.IpAddress</td>
+                <td>@ip.SubnetMask</td>
+                <td>@ip.Gateway</td>
+                <td>@ip.AssignmentType</td>
+                <td>@ip.VlanId</td>
+                <td>@ip.InterfaceName</td>
+                <td class="text-end">
+                    <a class="btn btn-sm btn-outline-primary"
+                       asp-controller="DeviceIps" asp-action="Edit" asp-route-id="@ip.DeviceIpId">Bearbeiten</a>
+                    <form asp-controller="DeviceIps" asp-action="Delete" asp-route-id="@ip.DeviceIpId"
+                          method="post" class="d-inline" onsubmit="return confirm('Löschen?');">
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Löschen</button>
+                    </form>
+                </td>
+            </tr>
+        }
+        @if (!items.Any())
+        {
+            <tr><td colspan="7" class="text-muted">Keine IPs vorhanden.</td></tr>
+        }
+    </tbody>
+</table>

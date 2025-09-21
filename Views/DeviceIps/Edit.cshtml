@@ -1,0 +1,45 @@
+@model DeviceIpEditVm
+@{
+    ViewData["Title"] = "IP bearbeiten";
+}
+<h4>@ViewData["Title"]</h4>
+<hr />
+<form asp-action="Edit" method="post">
+    <input asp-for="DeviceIpId" type="hidden" />
+    <input asp-for="DokuObjectId" type="hidden" />
+    <div class="row g-3">
+        <div class="col-md-4">
+            <label asp-for="IpAddress" class="form-label"></label>
+            <input asp-for="IpAddress" class="form-control" />
+            <span asp-validation-for="IpAddress" class="text-danger"></span>
+        </div>
+        <div class="col-md-4">
+            <label asp-for="SubnetMask" class="form-label"></label>
+            <input asp-for="SubnetMask" class="form-control" />
+        </div>
+        <div class="col-md-4">
+            <label asp-for="Gateway" class="form-label"></label>
+            <input asp-for="Gateway" class="form-control" />
+        </div>
+        <div class="col-md-4">
+            <label asp-for="AssignmentType" class="form-label">Zuweisung</label>
+            <select asp-for="AssignmentType" class="form-select" asp-items="Html.GetEnumSelectList<IpAssignmentType>()"></select>
+        </div>
+        <div class="col-md-4">
+            <label asp-for="VlanId" class="form-label"></label>
+            <input asp-for="VlanId" class="form-control" />
+        </div>
+        <div class="col-md-4">
+            <label asp-for="InterfaceName" class="form-label"></label>
+            <input asp-for="InterfaceName" class="form-control" />
+        </div>
+    </div>
+    <div class="mt-3">
+        <button class="btn btn-primary" type="submit">Speichern</button>
+        <a class="btn btn-outline-secondary" asp-controller="DokuObjects" asp-action="Details" asp-route-id="@Model.DokuObjectId">Zurück</a>
+    </div>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

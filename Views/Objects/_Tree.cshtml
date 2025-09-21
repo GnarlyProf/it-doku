@@ -1,0 +1,105 @@
+﻿@model IEnumerable<ITDoku.Models.DokuObject>
+@using ITDoku.Models
+@using System.Linq
+
+@{
+    var nodes = Model ?? Enumerable.Empty<DokuObject>();
+
+    // Map NodeType → Bootstrap Icon
+    string IconFor(NodeType t) => t switch
+    {
+        NodeType.Ordner => "bi-folder2",
+        NodeType.Infrastruktur => "bi-hdd-network",
+        NodeType.Drittanbieter => "bi-building",
+        NodeType.Geräte => "bi-cpu",
+        NodeType.Server => "bi-server",
+        NodeType.Software => "bi-box-seam",
+        NodeType.Tresor => "bi-shield-lock",
+        NodeType.Hilfe => "bi-life-preserver",
+        NodeType.Webseiten => "bi-globe",
+        NodeType.Zugangsdaten => "bi-key",
+        _ => "bi-file-earmark"
+    };
+
+    var currentId = ViewBag.CurrentId as Guid?;
+    var openIds = ViewBag.OpenIds as HashSet<Guid> ?? new();
+    var parentId = ViewBag.ParentId as Guid?;
+    var linkMap = ViewBag.LinkMap as Dictionary<(Guid ParentId, Guid TargetId), Guid>
+                    ?? new Dictionary<(Guid, Guid), Guid>();
+}
+
+<ul class="tree list-unstyled ps-0">
+    @foreach (var n in nodes.OrderBy((DokuObject x) => x.SortOrder).ThenBy((DokuObject x) => x.Name))
+    {
+        var hasChildren = n.Children?.Any() == true;
+        var isCurrent = currentId.HasValue && currentId.Value == n.Id;
+        var isOpen = openIds.Contains(n.Id) || isCurrent;
+
+        // prüfen, ob virtueller Link
+        Guid? linkId = null;
+        if (parentId.HasValue)
+        {
+            if (linkMap.TryGetValue((parentId.Value, n.Id), out var lId))
+                linkId = lId;
+        }
+
+        var css = "tree-link";
+        if (isCurrent) css += " active";
+        if (linkId.HasValue) css += " is-virtual";
+        string? dataLinkId = linkId?.ToString();
+        string? dataParentId = linkId.HasValue ? parentId?.ToString() : null;
+        string? dataTargetId = linkId.HasValue ? n.Id.ToString() : null;
+
+        <li class="tree-item">
+            <div class="d-flex align-items-center">
+                @if (hasChildren)
+                {
+                    var targetId = $"t-{n.Id}";
+                    <button type="button"
+                            class="tree-toggle btn btn-link btn-sm p-0 me-1"
+                            aria-expanded="@(isOpen.ToString().ToLower())"
+                            data-target="#@targetId"
+                            title="Auf-/Zuklappen">
+                        <span class="tree-caret"></span>
+                    </button>
+                }
+                else
+                {
+                    <span class="tree-spacer me-1"></span>
+                }
+
+                <a asp-controller="Objects" asp-action="Index" asp-route-id="@n.Id"
+                   class="@css"
+                   data-link-id="@dataLinkId"
+                   data-parent-id="@dataParentId"
+                   data-target-id="@dataTargetId"
+                   data-object-id="@n.Id" 
+                   data-object-type="@n.NodeType">
+                    <i class="bi @IconFor(n.NodeType) me-1 opacity-75"></i>
+                    @if (linkId.HasValue)
+                    {
+                        <span class="badge bg-secondary ms-1">&#128279;</span>
+                    }
+                    @n.Name
+                </a>
+            </div>
+
+            @if (hasChildren)
+            {
+                var targetId = $"t-{n.Id}";
+                <div id="@targetId" class="tree-children @(isOpen ? "" : "d-none") ms-3">
+                    @{
+                        var vd = new ViewDataDictionary(ViewData)
+                        {
+                            ["ParentId"] = n.Id,
+                            ["CurrentId"] = currentId,
+                            ["OpenIds"] = openIds,
+                            ["LinkMap"] = linkMap
+                        };
+                    }
+                    @await Html.PartialAsync("_Tree", (IEnumerable<DokuObject>)(n.Children ?? Enumerable.Empty<DokuObject>()), vd)
+                </div>
+            }
+        </li>
+    }
+</ul>
